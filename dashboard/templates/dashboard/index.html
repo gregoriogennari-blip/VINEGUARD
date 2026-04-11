@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ titolo|default:"Vineguard Dashboard" }}</title>
+</head>
+<body>
+  <h1>{{ titolo|default:"Vineguard Dashboard" }}</h1>
+
+  <p>Qui poi mostreremo i dati reali di InfluxDB.</p>
+
+  <ul>
+    {% for m in misure %}
+      >
+        Nodo {{ m.node_id }}:
+        {{ m.temp_aria }} °C,
+        {{ m.umid_aria }} % UR,
+        {{ m.umid_suolo }} % suolo,
+        {{ m.rain_mm }} mm
+      </li>
+    {% empty %}
+      >Nessun dato finto ancora.</li>
+    {% endfor %}
+  </ul>
+</body>
+</html>
