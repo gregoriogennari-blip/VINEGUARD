@@ -12,7 +12,16 @@ client = InfluxDBClient(
     org=os.getenv('INFLUX_ORG', 'VINEGUARD SSH')
 )
 write_api = client.write_api(write_options=SYNCHRONOUS)
+from django.shortcuts import render
+from .services.influx_service import get_latest_measurements
 
+def dashboard_home(request):
+    misure = get_latest_measurements()
+    context = {
+        "titolo": "Vineguard – Dashboard vigneto",
+        "misure": misure,
+    }
+    return render(request, "dashboard/index.html", context)
 @csrf_exempt
 def receive_sensors(request):
     if request.method == 'POST':
