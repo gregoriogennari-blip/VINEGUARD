@@ -2,25 +2,65 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8">
-  <title>{{ titolo|default:"Vineguard Dashboard" }}</title>
+  <title>{{ titolo }}</title>
+  {% load static %}
+  <link rel="stylesheet" href="{% static 'dashboard/style.css' %}">
 </head>
 <body>
-  <h1>{{ titolo|default:"Vineguard Dashboard" }}</h1>
+  <header class="page-header">
+    <h1>Vineguard – Dashboard vigneto</h1>
+    <button id="emergency-btn" class="btn btn-danger">
+      🚨 Emergenza manuale
+    </button>
+  </header>
 
-  <p>Qui poi mostreremo i dati reali di InfluxDB.</p>
+  <section class="cards">
+    <div class="card">
+      <h2>Nodi attivi</h2>
+      <p>{{ misure|length }}</p>
+    </div>
+    <div class="card">
+      <h2>Ultimo aggiornamento</h2>
+      <p>
+        {% if misure %}
+          {{ misure.0.time|default:"N/D" }}
+        {% else %}
+          N/D
+        {% endif %}
+      </p>
+    </div>
+  </section>
 
-  <ul>
-    {% for m in misure %}
-      >
-        Nodo {{ m.node_id }}:
-        {{ m.temp_aria }} °C,
-        {{ m.umid_aria }} % UR,
-        {{ m.umid_suolo }} % suolo,
-        {{ m.rain_mm }} mm
-      </li>
-    {% empty %}
-      >Nessun dato finto ancora.</li>
-    {% endfor %}
-  </ul>
+  <section>
+    <h2>Dati ultimi nodi</h2>
+    <table class="data-table">
+      <thead>
+      <tr>
+        <th>Nodo</th>
+        <th>Temp aria (°C)</th>
+        <th>Umid aria (%)</th>
+        <th>Umid suolo (%)</th>
+        <th>Pioggia (mm)</th>
+        <th>Ora</th>
+      </tr>
+      </thead>
+      <tbody id="nodes-tbody">
+      {% for m in misure %}
+        <tr>
+          <td>{{ m.node_id }}</td>
+          <td>{{ m.temp_aria }}</td>
+          <td>{{ m.umid_aria }}</td>
+          <td>{{ m.umid_suolo }}</td>
+          <td>{{ m.rain_mm }}</td>
+          <td>{{ m.time }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6">Nessun dato disponibile.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <script src="{% static 'dashboard/app.js' %}"></script>
 </body>
 </html>
