@@ -64,6 +64,9 @@ STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 # ===== Variabili esterne =====
 INFLUX_TOKEN = os.getenv("INFLUX_TOKEN", "")
 INFLUX_HOST = os.getenv("INFLUX_HOST", "https://eu-central-1-1.aws.cloud2.influxdata.com")
