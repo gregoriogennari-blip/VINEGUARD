@@ -1,5 +1,5 @@
 async function sendEmergency() {
-  if (!confirm("Confermi l'invio di un'EMERGENZA manuale?")) return;
+  if (!confirm("Confermi l'invio dell'avviso di MALATTIA?")) return;
 
   try {
     const resp = await fetch("/api/emergency/", {
@@ -9,10 +9,10 @@ async function sendEmergency() {
       }
     });
     if (!resp.ok) {
-      alert("Errore invio emergenza");
+      alert("Errore invio avviso");
       return;
     }
-    alert("Emergenza inviata con successo");
+    alert("Avviso inviato con successo");
   } catch (err) {
     console.error(err);
     alert("Errore di rete nell'invio dell'emergenza");
