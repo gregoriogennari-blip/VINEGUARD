@@ -16,12 +16,18 @@ from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_POST
 # ===== Client InfluxDB usato per SCRIVERE (API sensori + emergenza) =====
 
-influx_write_client = InfluxDBClient(
-    url=settings.INFLUX_HOST,
-    token=settings.INFLUX_TOKEN,
-    org=settings.INFLUX_ORG,
-)
-write_api = influx_write_client.write_api(write_options=SYNCHRONOUS)
+# ✅ DA AGGIUNGERE
+def get_write_api():
+    """
+    Crea il client InfluxDB al momento dell'uso,
+    così le variabili ambiente sono già caricate da Render.
+    """
+    client = InfluxDBClient(
+        url=settings.INFLUX_HOST,
+        token=settings.INFLUX_TOKEN,
+        org=settings.INFLUX_ORG,
+    )
+    return client.write_api(write_options=SYNCHRONOUS)
 
 
 # ===== VIEW HTML =====
@@ -103,6 +109,7 @@ def receive_sensors(request):
         .time(time_obj)
     )
 
+    write_api = get_write_api()
     write_api.write(bucket=settings.INFLUX_BUCKET, record=point)
 
     return JsonResponse({"status": "saved"}, status=201)
@@ -124,6 +131,7 @@ def emergency_alert(request):
         .field("triggered", 1)
         .time(datetime.utcnow())
     )
+    write_api = get_write_api()
     write_api.write(bucket=settings.INFLUX_BUCKET, record=point)
 
     # Invio messaggio Telegram, se TOKEN e CHAT_ID ci sono
