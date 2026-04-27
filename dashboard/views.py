@@ -12,7 +12,8 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 
 from .services.influx_service import get_latest_measurements, get_latest_as_dict
 
-
+from django.http import JsonResponse, HttpResponse
+from django.views.decorators.http import require_POST
 # ===== Client InfluxDB usato per SCRIVERE (API sensori + emergenza) =====
 
 influx_write_client = InfluxDBClient(
@@ -144,3 +145,63 @@ def emergency_alert(request):
             pass
 
     return JsonResponse({"status": "alert_sent"})
+
+def send_telegram_message(chat_id, text):
+    token = settings.TELEGRAM_TOKEN
+    if not token:
+        return False
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+    }
+    try:
+        r = requests.post(url, data=payload, timeout=10)
+        return r.ok
+    except requests.RequestException:
+        return False
+
+@csrf_exempt
+@require_POST
+def telegram_webhook(request):
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return JsonResponse({"ok": False, "error": "invalid json"}, status=400)
+
+    message = data.get("message", {})
+    chat = message.get("chat", {})
+    text = (message.get("text") or "").strip().upper()
+    chat_id = chat.get("id")
+
+    if not chat_id:
+        return JsonResponse({"ok": True})
+
+    if text == "MALATTIA":
+        # Qui puoi anche salvare l'evento su DB o Influx
+        send_telegram_message(
+            chat_id,
+            "Segnalazione MALATTIA registrata correttamente."
+        )
+        return JsonResponse({"ok": True, "action": "malattia_registered"})
+
+    if text == "AIUTO":
+        send_telegram_message(
+            chat_id,
+            "Comandi disponibili: MALATTIA, AIUTO, STATO"
+        )
+        return JsonResponse({"ok": True, "action": "help_sent"})
+
+    if text == "STATO":
+        send_telegram_message(
+            chat_id,
+            "Vineguard online. Dashboard attiva."
+        )
+        return JsonResponse({"ok": True, "action": "status_sent"})
+
+    send_telegram_message(
+        chat_id,
+        "Comando non riconosciuto. Scrivi AIUTO."
+    )
+    return JsonResponse({"ok": True, "action": "unknown_command"})
