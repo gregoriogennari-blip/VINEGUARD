@@ -4,6 +4,7 @@ from .views import (
     latest_data_json,
     receive_sensors,
     emergency_alert,
+    telegram_webhook,
 )
 
 urlpatterns = [
@@ -11,4 +12,5 @@ urlpatterns = [
     path("api/latest/", latest_data_json, name="latest_data_json"),
     path("api/sensors/", receive_sensors, name="receive_sensors"),
     path("api/emergency/", emergency_alert, name="emergency_alert"),
+    path("telegram/webhook/", telegram_webhook, name="telegram_webhook"),
 ]
