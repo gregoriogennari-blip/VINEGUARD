@@ -234,13 +234,13 @@ def telegram_webhook(request):
         )
         return JsonResponse({"ok": True, "action": "status_sent"})
     if text == "ADDESTRA":
-    result = train_and_save()
-    if result["status"] == "trained":
-        msg = f"🤖 Modello aggiornato! {result['n_samples']} campioni usati."
-    else:
-        msg = f"⚠️ {result.get('msg', 'Errore training.')}"
-    send_telegram_message(chat_id, msg)
-    return JsonResponse({"ok": True})
+        result = train_and_save()
+        if result["status"] == "trained":
+            msg = f"🤖 Modello aggiornato! {result['n_samples']} campioni usati."
+        else:
+            msg = f"⚠️ {result.get('msg', 'Errore training.')}"
+        send_telegram_message(chat_id, msg)
+        return JsonResponse({"ok": True, "action": "training_done"})
     
     send_telegram_message(
         chat_id,
