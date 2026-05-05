@@ -14,9 +14,11 @@ from .services.influx_service import get_latest_measurements, get_latest_as_dict
 
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_POST
-# ===== Client InfluxDB usato per SCRIVERE (API sensori + emergenza) =====
 
-# ✅ DA AGGIUNGERE
+from .services.ml_labels import save_malattia_label, get_all_labels
+from .services.ml_predict import predict_rischio, predict_tutti
+from .services.ml_train import train_and_save, model_exists
+
 def get_write_api():
     """
     Crea il client InfluxDB al momento dell'uso,
