@@ -197,7 +197,7 @@ def telegram_webhook(request):
     if text == "AIUTO":
         send_telegram_message(
             chat_id,
-            "Comandi disponibili: MALATTIA, AIUTO, STATO"
+            "Comandi disponibili: MALATTIA, AIUTO, STATO, ADDESTRA"
         )
         return JsonResponse({"ok": True, "action": "help_sent"})
 
@@ -207,7 +207,15 @@ def telegram_webhook(request):
             "Vineguard online. Dashboard attiva."
         )
         return JsonResponse({"ok": True, "action": "status_sent"})
-
+    if text == "ADDESTRA":
+    result = train_and_save()
+    if result["status"] == "trained":
+        msg = f"🤖 Modello aggiornato! {result['n_samples']} campioni usati."
+    else:
+        msg = f"⚠️ {result.get('msg', 'Errore training.')}"
+    send_telegram_message(chat_id, msg)
+    return JsonResponse({"ok": True})
+    
     send_telegram_message(
         chat_id,
         "Comando non riconosciuto. Scrivi AIUTO."
