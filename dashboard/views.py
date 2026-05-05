@@ -138,7 +138,9 @@ def ml_labels_list(request):
 @csrf_exempt
 def ml_train_json(request):
     if request.method != "POST":
-        return JsonResponse({"error": "POST only"}
+        return JsonResponse({"error": "POST only"}, status=405)
+    result = train_and_save()
+    return JsonResponse(result)
 # ===== API emergenza manuale (pulsante dashboard) =====
 
 @csrf_exempt
