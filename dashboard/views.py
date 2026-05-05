@@ -114,7 +114,31 @@ def receive_sensors(request):
 
     return JsonResponse({"status": "saved"}, status=201)
 
+def ml_risk_json(request):
+    node_id = request.GET.get("node_id")
+    window  = int(request.GET.get("window", 7))
+    data = predict_rischio(node_id, window) if node_id else predict_tutti(window)
+    return JsonResponse({"ml_risk": data})
 
+@csrf_exempt
+def ml_label_json(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+    payload  = json.loads(request.body.decode("utf-8"))
+    node_id  = payload.get("node_id")
+    if not node_id:
+        return JsonResponse({"error": "node_id obbligatorio"}, status=400)
+    window_days = int(payload.get("window_days", 7))
+    save_malattia_label(node_id, window_days=window_days)
+    return JsonResponse({"status": "label_saved", "node_id": node_id}, status=201)
+
+def ml_labels_list(request):
+    return JsonResponse({"labels": get_all_labels()})
+
+@csrf_exempt
+def ml_train_json(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST only"}
 # ===== API emergenza manuale (pulsante dashboard) =====
 
 @csrf_exempt
