@@ -35,14 +35,12 @@ def get_write_api():
 # ===== VIEW HTML =====
 
 def dashboard_home(request):
-    """
-    Pagina principale: mostra ultimi dati per ogni nodo.
-    """
-    misure = get_latest_measurements()
-    context = {
-        "titolo": "Vineguard – Dashboard vigneto",
-        "misure": misure,
-    }
+    misure   = get_latest_measurements()
+    rischi   = predict_tutti()
+    rischi_map = {r["node_id"]: r for r in rischi}
+    context  = {"titolo": "Vineguard – Dashboard vigneto",
+                 "misure": misure, "rischi_map": rischi_map,
+                 "model_ready": model_exists()}
     return render(request, "dashboard/index.html", context)
 
 
