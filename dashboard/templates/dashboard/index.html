@@ -79,7 +79,41 @@
       </a>
     </div>
   </header>
+<!-- Card Rischio ML -->
+<article class="card card-risk">
+  <header class="card-header">
+    <span class="card-label">Rischio malattia (ML)</span>
+  </header>
+  <div class="card-body">
+    <div class="risk-value">
+      {{ rischio_percento }}%
+    </div>
 
+    <div class="risk-bar">
+      <div
+        class="risk-bar-fill
+          {% if rischio_percento < 30 %}
+            risk-low
+          {% elif rischio_percento < 70 %}
+            risk-medium
+          {% else %}
+            risk-high
+          {% endif %}"
+        style="width: {{ rischio_percento }}%;"
+      ></div>
+    </div>
+
+    <p class="risk-text">
+      {% if rischio_percento < 30 %}
+        Rischio basso, condizioni attualmente favorevoli.
+      {% elif rischio_percento < 70 %}
+        Rischio medio, tieni monitorate le condizioni.
+      {% else %}
+        Rischio alto, valutare controlli e interventi nel vigneto.
+      {% endif %}
+    </p>
+  </div>
+</article>
   <div class="grafana-wrapper">
     <iframe
       src="https://vineguardssh.grafana.net/public-dashboards/c6686e371a894ba68fcfb0c9e465c964"
