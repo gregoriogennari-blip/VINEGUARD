@@ -55,7 +55,47 @@ def latest_data_json(request):
 
 
 # ===== API per ricevere dati dal gateway (JSON) =====
+def _calcola_rischio_ml(misure):
+    """
+    Calcola il rischio come percentuale 0‑100 usando il modello ML.
+    Sostituisci il corpo con la chiamata reale al tuo modello.
+    'misure' è il dict che già passi al template (ultimi dati per nodo).
+    """
 
+    if not misure:
+        return 0
+
+    # Esempio: prendo il primo nodo
+    primo_nodo = list(misure.values())[0]
+
+    # Qui dovresti estrarre le feature reali:
+    # temparia = primo_nodo.get("temparia")
+    # umidaria = primo_nodo.get("umidaria")
+    # umidsuolo = primo_nodo.get("umidsuolo")
+    # rainmm = primo_nodo.get("rainmm")
+    #
+    # E poi chiamare il tuo modello, per esempio:
+    # prob = modello.predict_proba([[temparia, umidaria, umidsuolo, rainmm]])[0][1]
+
+    # Placeholder: per ora restituisco un valore fisso per non rompere nulla
+    prob = 0.42  # float tra 0 e 1
+
+    return round(prob * 100)
+
+
+def dashboard_home(request):
+    """
+    Pagina principale: ultimi dati + rischio ML.
+    """
+    misure = getlatestmeasurements()
+    rischio_percento = _calcola_rischio_ml(misure)
+
+    context = {
+        "titolo": "Vineguard Dashboard vigneto",
+        "misure": misure,
+        "rischio_percento": rischio_percento,
+    }
+    return render(request, "dashboard/index.html", context)
 @csrf_exempt
 def receive_sensors(request):
     """
