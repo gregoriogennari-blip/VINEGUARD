@@ -61,7 +61,17 @@ def _calcola_rischio_ml(misure):
     row_arr = np.array(row, dtype=float)
     proba = model.predict_proba(row_arr)[0][1]
     return round(float(proba) * 100)
+    
+def dashboardhome(request):
+    misure = getlatestmeasurements()
+    rischio_percento = _calcola_rischio_ml(misure)
 
+    context = {
+        "titolo": "Vineguard Dashboard vigneto",
+        "misure": misure,
+        "rischio_percento": rischio_percento,
+    }
+    return render(request, "dashboard/index.html", context)
 # ===== VIEW HTML =====
 
 def dashboard_home(request):
