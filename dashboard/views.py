@@ -35,7 +35,32 @@ def get_write_api():
         org=settings.INFLUX_ORG,
     )
     return client.write_api(write_options=SYNCHRONOUS)
+@lru_cache(maxsize=1)
+def _load_ml_model():
+    path = os.path.join(os.path.dirname(__file__), "model_rischio.pkl")
+    if not os.path.exists(path):
+        return None
+    return joblib.load(path)
 
+
+def _calcola_rischio_ml(misure):
+    artefact = _load_ml_model()
+    if artefact is None or not misure:
+        return 0
+
+    model = artefact["model"]
+    primo_nodo = list(misure.values())[0]
+
+    row = [[
+        float(primo_nodo.get("temparia", 0)),
+        float(primo_nodo.get("umidaria", 0)),
+        float(primo_nodo.get("umidsuolo", 0)),
+        float(primo_nodo.get("rainmm", 0)),
+    ]]
+
+    row_arr = np.array(row, dtype=float)
+    proba = model.predict_proba(row_arr)[0][1]
+    return round(float(proba) * 100)
 
 # ===== VIEW HTML =====
 
