@@ -19,6 +19,11 @@ from .services.ml_labels import save_malattia_label, get_all_labels
 from .services.ml_predict import predict_rischio, predict_tutti
 from .services.ml_train import train_and_save, model_exists
 
+import os
+import joblib
+import numpy as np
+from functools import lru_cache
+
 def get_write_api():
     """
     Crea il client InfluxDB al momento dell'uso,
