@@ -2,32 +2,25 @@ import json
 from datetime import datetime
 
 from django.conf import settings
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 
 import requests
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 from .services.influx_service import get_latest_measurements, get_latest_as_dict
-
-from django.http import JsonResponse, HttpResponse
-from django.views.decorators.http import require_POST
-
 from .services.ml_labels import save_malattia_label, get_all_labels
 from .services.ml_predict import predict_rischio, predict_tutti
 from .services.ml_train import train_and_save, model_exists
 
-import os
-import joblib
-import numpy as np
-from functools import lru_cache
 
 def get_write_api():
     """
     Crea il client InfluxDB al momento dell'uso,
-    così le variabili ambiente sono già caricate da Render.
+    così le variabili ambiente sono già caricate (es. su Render).
     """
     client = InfluxDBClient(
         url=settings.INFLUX_HOST,
@@ -35,52 +28,25 @@ def get_write_api():
         org=settings.INFLUX_ORG,
     )
     return client.write_api(write_options=SYNCHRONOUS)
-@lru_cache(maxsize=1)
-def _load_ml_model():
-    path = os.path.join(os.path.dirname(__file__), "model_rischio.pkl")
-    if not os.path.exists(path):
-        return None
-    return joblib.load(path)
 
 
-def _calcola_rischio_ml(misure):
-    artefact = _load_ml_model()
-    if artefact is None or not misure:
-        return 0
-
-    model = artefact["model"]
-    primo_nodo = list(misure.values())[0]
-
-    row = [[
-        float(primo_nodo.get("temparia", 0)),
-        float(primo_nodo.get("umidaria", 0)),
-        float(primo_nodo.get("umidsuolo", 0)),
-        float(primo_nodo.get("rainmm", 0)),
-    ]]
-
-    row_arr = np.array(row, dtype=float)
-    proba = model.predict_proba(row_arr)[0][1]
-    return round(float(proba) * 100)
-    
-def dashboardhome(request):
-    misure = getlatestmeasurements()
-    rischio_percento = _calcola_rischio_ml(misure)
-
-    context = {
-        "titolo": "Vineguard Dashboard vigneto",
-        "misure": misure,
-        "rischio_percento": rischio_percento,
-    }
-    return render(request, "dashboard/index.html", context)
-# ===== VIEW HTML =====
+# ===== VIEW HTML DASHBOARD =====
 
 def dashboard_home(request):
-    misure   = get_latest_measurements()
-    rischi   = predict_tutti()
+    """
+    Pagina principale: mostra le ultime misure per nodo
+    e, se il modello ML esiste, il rischio calcolato per ciascun nodo.
+    """
+    misure = get_latest_measurements()
+    rischi = predict_tutti()          # lista di dict {node_id, rischio_ml, classe, ...}
     rischi_map = {r["node_id"]: r for r in rischi}
-    context  = {"titolo": "Vineguard – Dashboard vigneto",
-                 "misure": misure, "rischi_map": rischi_map,
-                 "model_ready": model_exists()}
+
+    context = {
+        "titolo": "Vineguard – Dashboard vigneto",
+        "misure": misure,
+        "rischi_map": rischi_map,
+        "model_ready": model_exists(),
+    }
     return render(request, "dashboard/index.html", context)
 
 
@@ -95,47 +61,7 @@ def latest_data_json(request):
 
 
 # ===== API per ricevere dati dal gateway (JSON) =====
-def _calcola_rischio_ml(misure):
-    """
-    Calcola il rischio come percentuale 0‑100 usando il modello ML.
-    Sostituisci il corpo con la chiamata reale al tuo modello.
-    'misure' è il dict che già passi al template (ultimi dati per nodo).
-    """
 
-    if not misure:
-        return 0
-
-    # Esempio: prendo il primo nodo
-    primo_nodo = list(misure.values())[0]
-
-    # Qui dovresti estrarre le feature reali:
-    # temparia = primo_nodo.get("temparia")
-    # umidaria = primo_nodo.get("umidaria")
-    # umidsuolo = primo_nodo.get("umidsuolo")
-    # rainmm = primo_nodo.get("rainmm")
-    #
-    # E poi chiamare il tuo modello, per esempio:
-    # prob = modello.predict_proba([[temparia, umidaria, umidsuolo, rainmm]])[0][1]
-
-    # Placeholder: per ora restituisco un valore fisso per non rompere nulla
-    prob = 0.42  # float tra 0 e 1
-
-    return round(prob * 100)
-
-
-def dashboard_home(request):
-    """
-    Pagina principale: ultimi dati + rischio ML.
-    """
-    misure = getlatestmeasurements()
-    rischio_percento = _calcola_rischio_ml(misure)
-
-    context = {
-        "titolo": "Vineguard Dashboard vigneto",
-        "misure": misure,
-        "rischio_percento": rischio_percento,
-    }
-    return render(request, "dashboard/index.html", context)
 @csrf_exempt
 def receive_sensors(request):
     """
@@ -194,33 +120,58 @@ def receive_sensors(request):
 
     return JsonResponse({"status": "saved"}, status=201)
 
+
+# ===== API ML: rischio, etichette, training =====
+
 def ml_risk_json(request):
+    """
+    Ritorna il rischio ML per un nodo (se node_id) o per tutti i nodi.
+    """
     node_id = request.GET.get("node_id")
-    window  = int(request.GET.get("window", 7))
+    window = int(request.GET.get("window", 7))
+
     data = predict_rischio(node_id, window) if node_id else predict_tutti(window)
     return JsonResponse({"ml_risk": data})
 
+
 @csrf_exempt
 def ml_label_json(request):
+    """
+    Salva un'etichetta di malattia per un nodo, usando gli ultimi N giorni.
+    """
     if request.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
-    payload  = json.loads(request.body.decode("utf-8"))
-    node_id  = payload.get("node_id")
+
+    payload = json.loads(request.body.decode("utf-8"))
+    node_id = payload.get("node_id")
     if not node_id:
         return JsonResponse({"error": "node_id obbligatorio"}, status=400)
+
     window_days = int(payload.get("window_days", 7))
     save_malattia_label(node_id, window_days=window_days)
+
     return JsonResponse({"status": "label_saved", "node_id": node_id}, status=201)
 
+
 def ml_labels_list(request):
+    """
+    Lista tutte le etichette di malattia registrate.
+    """
     return JsonResponse({"labels": get_all_labels()})
+
 
 @csrf_exempt
 def ml_train_json(request):
+    """
+    Lancia il training del modello RandomForest e salva il .pkl.
+    """
     if request.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
+
     result = train_and_save()
     return JsonResponse(result)
+
+
 # ===== API emergenza manuale (pulsante dashboard) =====
 
 @csrf_exempt
@@ -260,6 +211,7 @@ def emergency_alert(request):
 
     return JsonResponse({"status": "alert_sent"})
 
+
 def send_telegram_message(chat_id, text):
     token = settings.TELEGRAM_TOKEN
     if not token:
@@ -276,9 +228,14 @@ def send_telegram_message(chat_id, text):
     except requests.RequestException:
         return False
 
+
 @csrf_exempt
 @require_POST
 def telegram_webhook(request):
+    """
+    Webhook Telegram per comandi:
+    MALATTIA, AIUTO, STATO, ADDESTRA
+    """
     try:
         data = json.loads(request.body.decode("utf-8"))
     except Exception:
@@ -313,15 +270,17 @@ def telegram_webhook(request):
             "Vineguard online. Dashboard attiva."
         )
         return JsonResponse({"ok": True, "action": "status_sent"})
+
     if text == "ADDESTRA":
         result = train_and_save()
         if result["status"] == "trained":
             msg = f"🤖 Modello aggiornato! {result['n_samples']} campioni usati."
         else:
             msg = f"⚠️ {result.get('msg', 'Errore training.')}"
+
         send_telegram_message(chat_id, msg)
         return JsonResponse({"ok": True, "action": "training_done"})
-    
+
     send_telegram_message(
         chat_id,
         "Comando non riconosciuto. Scrivi AIUTO."
