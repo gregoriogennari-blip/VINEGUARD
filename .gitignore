@@ -41,3 +41,7 @@ secrets.py
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Generated files
+staticfiles/
+dashboard/services/risk_model.pkl

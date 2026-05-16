@@ -152,9 +152,17 @@ def ml_label_json(request):
         return JsonResponse({"error": "node_id obbligatorio"}, status=400)
 
     window_days = int(payload.get("window_days", 7))
-    save_malattia_label(node_id, window_days=window_days)
+    label = payload.get("label", 1)
+    try:
+        label = int(label)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "label deve essere 0 o 1"}, status=400)
+    if label not in (0, 1):
+        return JsonResponse({"error": "label deve essere 0 o 1"}, status=400)
 
-    return JsonResponse({"status": "label_saved", "node_id": node_id}, status=201)
+    save_malattia_label(node_id, window_days=window_days, label=label)
+
+    return JsonResponse({"status": "label_saved", "node_id": node_id, "label": label}, status=201)
 
 
 def ml_labels_list(request):

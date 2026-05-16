@@ -16,15 +16,20 @@ def _build_client():
 
 
 def save_malattia_label(node_id: str, window_days: int = 7,
-                        event_time: datetime = None):
-    """Salva un'etichetta positiva (malattia confermata)."""
+                        event_time: datetime = None, label: int = 1):
+    """Salva un'etichetta ML per un nodo.
+
+    label=1 indica malattia, label=0 indica sana.
+    """
+    if label not in (0, 1):
+        raise ValueError("label must be 0 or 1")
     if event_time is None:
         event_time = datetime.now(timezone.utc)
     client = _build_client()
     write_api = client.write_api(write_options=SYNCHRONOUS)
     point = (Point("ml_labels")
              .tag("node_id", node_id)
-             .field("label", 1)
+             .field("label", int(label))
              .field("window_days", window_days)
              .time(event_time))
     write_api.write(bucket=settings.INFLUX_BUCKET, record=point)

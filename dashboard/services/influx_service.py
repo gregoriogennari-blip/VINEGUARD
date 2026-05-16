@@ -40,7 +40,11 @@ from(bucket: "{settings.INFLUX_BUCKET}")
   |> last()
 """
 
-    tables = query_api.query(query=flux)
+    try:
+        tables = query_api.query(query=flux)
+    except Exception:
+        client.close()
+        return []
     client.close()
 
     # Aggrego per node_id
