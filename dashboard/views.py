@@ -33,19 +33,23 @@ def get_write_api():
 # ===== VIEW HTML DASHBOARD =====
 
 def dashboard_home(request):
-    """
-    Pagina principale: mostra le ultime misure per nodo
-    e, se il modello ML esiste, il rischio calcolato per ciascun nodo.
-    """
     misure = get_latest_measurements()
     rischi = predict_tutti()          # lista di dict {node_id, rischio_ml, classe, ...}
     rischi_map = {r["node_id"]: r for r in rischi}
+
+    rischio_percento = 0
+    # prendo il primo nodo che ha un rischio calcolato
+    for r in rischi:
+        if r.get("rischio_ml") is not None:
+            rischio_percento = r["rischio_ml"]
+            break
 
     context = {
         "titolo": "Vineguard – Dashboard vigneto",
         "misure": misure,
         "rischi_map": rischi_map,
         "model_ready": model_exists(),
+        "rischio_percento": rischio_percento,
     }
     return render(request, "dashboard/index.html", context)
 
