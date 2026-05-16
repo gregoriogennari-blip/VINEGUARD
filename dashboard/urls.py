@@ -3,11 +3,13 @@ from .views import (
     dashboard_home, latest_data_json, receive_sensors,
     emergency_alert, telegram_webhook,
     ml_risk_json, ml_label_json, ml_labels_list, ml_train_json,
+    historical_data_json,
 )
 
 urlpatterns = [
     path("",                    dashboard_home,   name="dashboard_home"),
     path("api/latest/",         latest_data_json, name="latest_data_json"),
+    path("api/history/",        historical_data_json, name="historical_data_json"),
     path("api/sensors/",        receive_sensors,  name="receive_sensors"),
     path("api/emergency/",      emergency_alert,  name="emergency_alert"),
     path("telegram/webhook/",   telegram_webhook, name="telegram_webhook"),

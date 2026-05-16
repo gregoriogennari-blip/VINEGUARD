@@ -1,26 +1,133 @@
 import json
 from datetime import datetime
 
+import requests
 from django.conf import settings
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
-
-import requests
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 
-from .services.influx_service import get_latest_measurements, get_latest_as_dict
-from .services.ml_labels import save_malattia_label, get_all_labels
+from .services.influx_service import (
+    format_timestamp,
+    get_historical_data,
+    get_latest_as_dict,
+    get_node_ids,
+    risk_level,
+)
+from .services.ml_labels import get_all_labels, save_malattia_label
 from .services.ml_predict import predict_rischio, predict_tutti
-from .services.ml_train import train_and_save, model_exists
+from .services.ml_train import model_exists, train_and_save
+
+
+def _format_time(value):
+    return format_timestamp(value)
+
+
+MINI_CHART_WIDTH = 420
+MINI_CHART_HEIGHT = 120
+MINI_CHART_LEFT = 42
+MINI_CHART_RIGHT = 12
+MINI_CHART_TOP = 12
+MINI_CHART_BOTTOM = 24
+
+
+def _mini_svg_points(values, min_value, max_value):
+    clean = [None if value is None else float(value) for value in values]
+    if not clean:
+        return ""
+    plot_w = MINI_CHART_WIDTH - MINI_CHART_LEFT - MINI_CHART_RIGHT
+    plot_h = MINI_CHART_HEIGHT - MINI_CHART_TOP - MINI_CHART_BOTTOM
+    value_range = max(max_value - min_value, 1)
+    denom = max(len(clean) - 1, 1)
+    points = []
+    for index, value in enumerate(clean):
+        if value is None:
+            continue
+        clipped = max(min_value, min(value, max_value))
+        x = MINI_CHART_LEFT + (index / denom) * plot_w
+        y = MINI_CHART_TOP + plot_h - ((clipped - min_value) / value_range) * plot_h
+        points.append(f"{round(x, 1)},{round(y, 1)}")
+    return " ".join(points)
+
+
+def _latest_value(values):
+    for value in reversed(values or []):
+        if value is not None:
+            return round(float(value), 1)
+    return None
+
+
+def _build_chart_context(history):
+    labels = history.get("time_labels", [])
+    first_label = labels[0][8:10] + "/" + labels[0][5:7] + " " + labels[0][11:13] + "h" if labels else ""
+    last_label = labels[-1][8:10] + "/" + labels[-1][5:7] + " " + labels[-1][11:13] + "h" if labels else ""
+
+    return {
+        "node_id": history.get("node_id"),
+        "point_count": len(labels),
+        "first_label": first_label,
+        "last_label": last_label,
+        "chart_left": MINI_CHART_LEFT,
+        "chart_right_x": MINI_CHART_WIDTH - MINI_CHART_RIGHT,
+        "chart_top": MINI_CHART_TOP,
+        "chart_mid_y": MINI_CHART_TOP + ((MINI_CHART_HEIGHT - MINI_CHART_TOP - MINI_CHART_BOTTOM) / 2),
+        "chart_bottom_y": MINI_CHART_HEIGHT - MINI_CHART_BOTTOM,
+        "series": [
+            {
+                "name": "Temperatura aria",
+                "unit": "C",
+                "class": "line-temp",
+                "min": 0,
+                "max": 40,
+                "mid": 20,
+                "range_label": "0-40 C",
+                "latest": _latest_value(history.get("temperatures", [])),
+                "points": _mini_svg_points(history.get("temperatures", []), 0, 40),
+            },
+            {
+                "name": "Umidita aria",
+                "unit": "%",
+                "class": "line-air",
+                "min": 0,
+                "max": 100,
+                "mid": 50,
+                "range_label": "0-100%",
+                "latest": _latest_value(history.get("humidity_air", [])),
+                "points": _mini_svg_points(history.get("humidity_air", []), 0, 100),
+            },
+            {
+                "name": "Umidita suolo",
+                "unit": "%",
+                "class": "line-soil",
+                "min": 0,
+                "max": 100,
+                "mid": 50,
+                "range_label": "0-100%",
+                "latest": _latest_value(history.get("humidity_soil", [])),
+                "points": _mini_svg_points(history.get("humidity_soil", []), 0, 100),
+            },
+            {
+                "name": "Pioggia",
+                "unit": "mm",
+                "class": "line-rain",
+                "min": 0,
+                "max": 5,
+                "mid": 2.5,
+                "range_label": "0-5 mm",
+                "latest": _latest_value(history.get("rainfall", [])),
+                "points": _mini_svg_points(history.get("rainfall", []), 0, 5),
+            },
+        ],
+    }
 
 
 def get_write_api():
     """
-    Crea il client InfluxDB al momento dell'uso,
-    così le variabili ambiente sono già caricate (es. su Render).
+    Crea il client InfluxDB al momento dell'uso, quando le variabili ambiente
+    sono gia' caricate.
     """
     client = InfluxDBClient(
         url=settings.INFLUX_HOST,
@@ -30,47 +137,84 @@ def get_write_api():
     return client.write_api(write_options=SYNCHRONOUS)
 
 
-# ===== VIEW HTML DASHBOARD =====
-
 def dashboard_home(request):
-    misure = get_latest_measurements()
-    rischi = predict_tutti()          # lista di dict {node_id, rischio_ml, classe, ...}
-    rischi_map = {r["node_id"]: r for r in rischi}
+    selected_node = request.GET.get("node_id")
+    misure = get_latest_as_dict(node_id=selected_node)
+    all_node_ids = get_node_ids()
+    chart_node_id = selected_node or (all_node_ids[0] if all_node_ids else None)
+    history = get_historical_data(chart_node_id, days=7) if chart_node_id else {
+        "node_id": None,
+        "time_labels": [],
+        "temperatures": [],
+        "humidity_air": [],
+        "humidity_soil": [],
+        "rainfall": [],
+    }
 
-    rischio_percento = 0
-    # prendo il primo nodo che ha un rischio calcolato
-    for r in rischi:
-        if r.get("rischio_ml") is not None:
-            rischio_percento = r["rischio_ml"]
-            break
+    risks = [m["rischio_db"] for m in misure if m.get("rischio_db") is not None]
+    rischio_percento = round(sum(risks) / len(risks), 1) if risks else 0
+    overall_level = risk_level(rischio_percento)
 
     context = {
-        "titolo": "Vineguard – Dashboard vigneto",
+        "titolo": "Vineguard - Dashboard vigneto",
         "misure": misure,
-        "rischi_map": rischi_map,
+        "all_node_ids": all_node_ids,
         "model_ready": model_exists(),
         "rischio_percento": rischio_percento,
+        "overall_risk_label": overall_level["label"],
+        "overall_risk_class": overall_level["class"],
+        "selected_node": selected_node,
+        "chart": _build_chart_context(history),
+        "latest_label": _format_time(misure[0]["time"]) if misure else "N/D",
     }
     return render(request, "dashboard/index.html", context)
 
 
-# ===== API JSON per frontend (grafici / refresh) =====
-
 def latest_data_json(request):
     """
-    Restituisce le ultime misure in JSON.
+    Restituisce le ultime misure in JSON. Se node_id e' presente, filtra il
+    risultato anche nei refresh automatici del frontend.
     """
-    data = get_latest_as_dict()
+    node_id = request.GET.get("node_id")
+    data = get_latest_as_dict(node_id=node_id)
     return JsonResponse({"nodes": data})
 
 
-# ===== API per ricevere dati dal gateway (JSON) =====
+def historical_data_json(request):
+    """
+    Restituisce serie storiche sensore dal database InfluxDB per i grafici.
+    """
+    node_id = request.GET.get("node_id")
+    if not node_id:
+        node_ids = get_node_ids()
+        node_id = node_ids[0] if node_ids else None
+
+    if not node_id:
+        return JsonResponse({
+            "history": {
+                "node_id": None,
+                "time_labels": [],
+                "temperatures": [],
+                "humidity_air": [],
+                "humidity_soil": [],
+                "rainfall": [],
+            }
+        })
+
+    try:
+        days = int(request.GET.get("days", 7))
+    except (TypeError, ValueError):
+        days = 7
+    days = max(1, min(days, 30))
+
+    return JsonResponse({"history": get_historical_data(node_id=node_id, days=days)})
+
 
 @csrf_exempt
 def receive_sensors(request):
     """
-    Endpoint da chiamare dal gateway.
-    Accetta JSON e scrive i dati nel bucket InfluxDB.
+    Endpoint da chiamare dal gateway. Accetta JSON e scrive i dati nel bucket
+    InfluxDB.
     """
     if request.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
@@ -79,16 +223,6 @@ def receive_sensors(request):
         payload = json.loads(request.body.decode("utf-8"))
     except Exception:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-
-    # JSON atteso:
-    # {
-    #   "node_id": "node1",
-    #   "temp_aria": 22.5,
-    #   "umid_aria": 85.2,
-    #   "umid_suolo": 71.4,
-    #   "pioggia": 2.1,
-    #   "timestamp": "2026-04-13T15:30:00Z"
-    # }
 
     node_id = payload.get("node_id", "unknown")
 
@@ -125,11 +259,10 @@ def receive_sensors(request):
     return JsonResponse({"status": "saved"}, status=201)
 
 
-# ===== API ML: rischio, etichette, training =====
-
 def ml_risk_json(request):
     """
     Ritorna il rischio ML per un nodo (se node_id) o per tutti i nodi.
+    L'endpoint resta disponibile, ma la dashboard principale usa grafici DB.
     """
     node_id = request.GET.get("node_id")
     window = int(request.GET.get("window", 7))
@@ -184,44 +317,63 @@ def ml_train_json(request):
     return JsonResponse(result)
 
 
-# ===== API emergenza manuale (pulsante dashboard) =====
-
 @csrf_exempt
 def emergency_alert(request):
     """
-    Scatta un evento di emergenza: scrive un record in InfluxDB
-    e manda un messaggio Telegram (se configurato).
+    Scatta un evento di emergenza: scrive un record in InfluxDB e manda un
+    messaggio Telegram, se configurato. Se node_id e' presente, salva anche
+    l'etichetta malattia per la finestra temporale del nodo.
     """
-    # Scrittura su Influx
+    try:
+        payload = json.loads(request.body.decode("utf-8")) if request.body else {}
+    except Exception:
+        payload = {}
+
+    node_id = payload.get("node_id") or request.POST.get("node_id") or request.GET.get("node_id")
+    if not node_id:
+        return JsonResponse({"error": "Seleziona un nodo prima di segnare una malattia."}, status=400)
+
+    try:
+        window_days = int(payload.get("window_days", 7))
+    except (TypeError, ValueError):
+        window_days = 7
+    window_days = max(1, min(window_days, 30))
+
+    save_malattia_label(node_id, window_days=window_days, label=1)
+
     point = (
         Point("emergency_alert")
         .tag("manual", "true")
+        .tag("node_id", node_id)
         .tag("org", settings.INFLUX_ORG)
         .field("triggered", 1)
+        .field("label_saved", 1)
+        .field("window_days", window_days)
         .time(datetime.utcnow())
     )
     write_api = get_write_api()
     write_api.write(bucket=settings.INFLUX_BUCKET, record=point)
 
-    # Invio messaggio Telegram, se TOKEN e CHAT_ID ci sono
     if settings.TELEGRAM_TOKEN and settings.TELEGRAM_CHAT_ID:
-        telegram_url = (
-            f"https://api.telegram.org/bot{settings.TELEGRAM_TOKEN}/sendMessage"
-        )
+        telegram_url = f"https://api.telegram.org/bot{settings.TELEGRAM_TOKEN}/sendMessage"
         try:
             requests.post(
                 telegram_url,
                 json={
                     "chat_id": settings.TELEGRAM_CHAT_ID,
-                    "text": "🚨 VINEGUARD – EMERGENZA MANUALE: controlla il vigneto!",
+                    "text": f"VINEGUARD - MALATTIA segnata per {node_id}. Controlla il vigneto.",
                 },
                 timeout=10,
             )
         except requests.RequestException:
-            # in dev possiamo ignorare l'errore, oppure loggare
             pass
 
-    return JsonResponse({"status": "alert_sent"})
+    return JsonResponse({
+        "status": "alert_sent",
+        "label_saved": True,
+        "node_id": node_id,
+        "window_days": window_days,
+    })
 
 
 def send_telegram_message(chat_id, text):
@@ -245,8 +397,7 @@ def send_telegram_message(chat_id, text):
 @require_POST
 def telegram_webhook(request):
     """
-    Webhook Telegram per comandi:
-    MALATTIA, AIUTO, STATO, ADDESTRA
+    Webhook Telegram per comandi: MALATTIA, AIUTO, STATO, ADDESTRA.
     """
     try:
         data = json.loads(request.body.decode("utf-8"))
@@ -262,39 +413,32 @@ def telegram_webhook(request):
         return JsonResponse({"ok": True})
 
     if text == "MALATTIA":
-        # Qui puoi anche salvare l'evento su DB o Influx
         send_telegram_message(
             chat_id,
-            "Segnalazione MALATTIA registrata correttamente."
+            "Segnalazione MALATTIA registrata correttamente.",
         )
         return JsonResponse({"ok": True, "action": "malattia_registered"})
 
     if text == "AIUTO":
         send_telegram_message(
             chat_id,
-            "Comandi disponibili: MALATTIA, AIUTO, STATO, ADDESTRA"
+            "Comandi disponibili: MALATTIA, AIUTO, STATO, ADDESTRA",
         )
         return JsonResponse({"ok": True, "action": "help_sent"})
 
     if text == "STATO":
-        send_telegram_message(
-            chat_id,
-            "Vineguard online. Dashboard attiva."
-        )
+        send_telegram_message(chat_id, "Vineguard online. Dashboard attiva.")
         return JsonResponse({"ok": True, "action": "status_sent"})
 
     if text == "ADDESTRA":
         result = train_and_save()
         if result["status"] == "trained":
-            msg = f"🤖 Modello aggiornato! {result['n_samples']} campioni usati."
+            msg = f"Modello aggiornato. {result['n_samples']} campioni usati."
         else:
-            msg = f"⚠️ {result.get('msg', 'Errore training.')}"
+            msg = result.get("msg", "Errore training.")
 
         send_telegram_message(chat_id, msg)
         return JsonResponse({"ok": True, "action": "training_done"})
 
-    send_telegram_message(
-        chat_id,
-        "Comando non riconosciuto. Scrivi AIUTO."
-    )
+    send_telegram_message(chat_id, "Comando non riconosciuto. Scrivi AIUTO.")
     return JsonResponse({"ok": True, "action": "unknown_command"})

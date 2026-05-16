@@ -30,13 +30,17 @@ def predict_rischio(node_id: str, window_days: int = 7) -> dict:
                 "classe": None, "stato": "dati_insufficienti"}
 
     X = pd.DataFrame([{col: feat.get(col, 0) for col in FEATURE_COLUMNS}])
-    proba    = model.predict_proba(X)[0]
-    classes  = list(model.classes_)
-    idx      = classes.index(1) if 1 in classes else -1
-    rischio  = round(float(proba[idx]) * 100, 1) if idx >= 0 else 0.0
-    classe   = "alto_rischio" if rischio >= 50 else "basso_rischio"
+    proba   = model.predict_proba(X)[0]
+    classes = list(model.classes_)
+    if 1 in classes:
+        idx = classes.index(1)
+        rischio = round(float(proba[idx]) * 100, 1)
+    else:
+        rischio = 0.0
+    classe = "alto_rischio" if rischio >= 50 else "basso_rischio"
+    stato = "ok" if 1 in classes else "modello_senza_classe_1"
     return {"node_id": node_id, "rischio_ml": rischio,
-            "classe": classe, "stato": "ok", "feature_usate": feat}
+            "classe": classe, "stato": stato, "feature_usate": feat}
 
 
 def predict_tutti(window_days: int = 7) -> list:

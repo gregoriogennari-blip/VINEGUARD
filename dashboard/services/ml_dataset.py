@@ -24,13 +24,21 @@ def _fetch_window(node_id, start, stop):
     s = start.strftime("%Y-%m-%dT%H:%M:%SZ")
     e = stop.strftime("%Y-%m-%dT%H:%M:%SZ")
     flux = f'''
-from(bucket: "{settings.INFLUX_BUCKET}")
+sensor = from(bucket: "{settings.INFLUX_BUCKET}")
   |> range(start: {s}, stop: {e})
   |> filter(fn: (r) => r["_measurement"] == "sensor_data")
   |> filter(fn: (r) => r["node_id"] == "{node_id}")
-  |> filter(fn: (r) => r["_field"] == "temp_aria" or r["_field"] == "umid_aria"
-            or r["_field"] == "umid_suolo" or r["_field"] == "rain_mm")
+  |> filter(fn: (r) => r["_field"] == "rain_mm")
+  |> aggregateWindow(every: 1d, fn: sum, createEmpty: false)
+
+other = from(bucket: "{settings.INFLUX_BUCKET}")
+  |> range(start: {s}, stop: {e})
+  |> filter(fn: (r) => r["_measurement"] == "sensor_data")
+  |> filter(fn: (r) => r["node_id"] == "{node_id}")
+  |> filter(fn: (r) => r["_field"] != "rain_mm")
   |> aggregateWindow(every: 1d, fn: mean, createEmpty: false)
+
+union(tables: [sensor, other])
 '''
     try:
         tables = query_api.query(query=flux)

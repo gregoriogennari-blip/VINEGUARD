@@ -4,43 +4,154 @@
   <meta charset="UTF-8">
   <title>{{ titolo }}</title>
   {% load static %}
-  <link rel="stylesheet" href="{% static 'dashboard/style.css' %}">
+  <link rel="stylesheet" href="{% static 'dashboard/style.css' %}?v=12">
 </head>
 <body>
   <header class="page-header">
-    <h1>VINEGUARD SSH - DASHBOARD</h1>
-    <button id="emergency-btn" class="btn btn-danger">
-      🚨 INVIA AVVISO
+    <div>
+      <h1>VINEGUARD SSH</h1>
+      <p class="page-kicker">Dashboard monitoraggio vigneto</p>
+    </div>
+    <button
+      id="emergency-btn"
+      class="btn btn-danger"
+      data-selected-node="{{ selected_node|default:'' }}"
+    >
+      Invia avviso
     </button>
   </header>
 
   <section class="cards">
-    <div class="card">
+    <div class="card metric-card">
       <h2>Nodi attivi</h2>
       <p>{{ misure|length }}</p>
     </div>
-    <div class="card">
+    <div class="card metric-card metric-wide">
       <h2>Ultimo aggiornamento</h2>
-      <p>
-        {% if misure %}
-          {{ misure.0.time|default:"N/D" }}
-        {% else %}
-          N/D
-        {% endif %}
-      </p>
+      <p>{{ latest_label }}</p>
+    </div>
+    <div class="card metric-card card-risk-summary">
+      <h2>Rischio malattia DB</h2>
+      <div class="metric-line">
+        <p id="risk-value">{{ rischio_percento }}%</p>
+        <span class="risk-chip {{ overall_risk_class }}">{{ overall_risk_label }}</span>
+      </div>
+      <div class="risk-meter">
+        <div
+          id="risk-meter-fill"
+          class="risk-meter-fill {{ overall_risk_class }}"
+          style="width: {{ rischio_percento|stringformat:'s'|default:'0' }}%;"
+        ></div>
+      </div>
     </div>
   </section>
 
-  <section>
-    <h2>Dati ultimi nodi</h2>
+  <section class="dashboard-grid">
+    <div class="panel panel-main">
+      <header class="panel-header">
+        <div>
+          <h2>Storico database{% if chart.node_id %} - {{ chart.node_id }}{% endif %}</h2>
+          <p>{{ chart.point_count }} punti degli ultimi 7 giorni, letti da InfluxDB.</p>
+        </div>
+        <a
+          href="https://vineguardssh.grafana.net/public-dashboards/c6686e371a894ba68fcfb0c9e465c964"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="btn btn-secondary"
+        >
+          Apri in Grafana
+        </a>
+      </header>
+
+      <div class="svg-chart-wrap">
+        {% if chart.point_count %}
+          <div class="mini-chart-grid">
+            {% for serie in chart.series %}
+              <article class="mini-chart">
+                <header>
+                  <span class="series-dot {{ serie.class }}"></span>
+                  <div>
+                    <strong>{{ serie.name }}</strong>
+                    <small>{{ serie.range_label }}</small>
+                  </div>
+                  <em>{% if serie.latest != None %}{{ serie.latest }} {{ serie.unit }}{% else %}N/D{% endif %}</em>
+                </header>
+                <svg viewBox="0 0 420 120" role="img" aria-label="{{ serie.name }}">
+                  <line x1="{{ chart.chart_left }}" y1="{{ chart.chart_top }}" x2="{{ chart.chart_left }}" y2="{{ chart.chart_bottom_y }}" class="axis" />
+                  <line x1="{{ chart.chart_left }}" y1="{{ chart.chart_bottom_y }}" x2="{{ chart.chart_right_x }}" y2="{{ chart.chart_bottom_y }}" class="axis" />
+                  <line x1="{{ chart.chart_left }}" y1="{{ chart.chart_mid_y }}" x2="{{ chart.chart_right_x }}" y2="{{ chart.chart_mid_y }}" class="grid-line" />
+                  <polyline points="{{ serie.points }}" class="{{ serie.class }}" />
+                </svg>
+                <footer>
+                  <span>{{ chart.first_label }}</span>
+                  <span>{{ chart.last_label }}</span>
+                </footer>
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="empty-chart">Nessun dato storico disponibile per il nodo selezionato.</div>
+        {% endif %}
+      </div>
+
+      <div class="chart-legend">
+        <span><i class="legend-temp"></i>Temperatura aria</span>
+        <span><i class="legend-air"></i>Umidita aria</span>
+        <span><i class="legend-soil"></i>Umidita suolo</span>
+        <span><i class="legend-rain"></i>Pioggia</span>
+      </div>
+    </div>
+
+    <aside class="panel">
+      <h2>Rischio per nodo</h2>
+      <div class="risk-list">
+        {% for m in misure %}
+          <div class="risk-row">
+            <div class="risk-row-head">
+              <span>{{ m.node_id }}</span>
+              <strong>{{ m.rischio_db }}%</strong>
+            </div>
+            <div class="risk-meter compact">
+              <div
+                class="risk-meter-fill {{ m.risk_class }}"
+                style="width: {{ m.rischio_db|stringformat:'s' }}%;"
+              ></div>
+            </div>
+          </div>
+        {% empty %}
+          <p class="muted">Nessun nodo disponibile.</p>
+        {% endfor %}
+      </div>
+    </aside>
+  </section>
+
+  <section class="panel table-panel">
+    <header class="panel-header">
+      <div>
+        <h2>Dati ultimi nodi</h2>
+        <p>Ultima misura disponibile per ogni nodo negli ultimi 30 giorni.</p>
+      </div>
+      <form method="get" class="node-selector">
+        <label for="node_id">Mostra nodo</label>
+        <select id="node_id" name="node_id">
+          <option value="" {% if not selected_node %}selected{% endif %}>Tutti i nodi</option>
+          {% for node_id in all_node_ids %}
+            <option value="{{ node_id }}" {% if node_id == selected_node %}selected{% endif %}>{{ node_id }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary">Filtra</button>
+      </form>
+    </header>
+
     <table class="data-table">
       <thead>
       <tr>
         <th>Nodo</th>
-        <th>Temp aria (°C)</th>
+        <th>Temp aria (C)</th>
         <th>Umid aria (%)</th>
         <th>Umid suolo (%)</th>
         <th>Pioggia (mm)</th>
+        <th>Rischio DB (%)</th>
         <th>Ora</th>
       </tr>
       </thead>
@@ -52,78 +163,16 @@
           <td>{{ m.umid_aria }}</td>
           <td>{{ m.umid_suolo }}</td>
           <td>{{ m.rain_mm }}</td>
-          <td>{{ m.time }}</td>
+          <td><span class="risk-chip {{ m.risk_class }}">{{ m.rischio_db }}% {{ m.risk_label }}</span></td>
+          <td>{{ m.time_label }}</td>
         </tr>
       {% empty %}
-        <tr><td colspan="6">Nessun dato disponibile.</td></tr>
+        <tr><td colspan="7">Nessun dato disponibile.</td></tr>
       {% endfor %}
       </tbody>
     </table>
   </section>
-<section class="section section-grafana">
-  <header class="section-header">
-    <div>
-      <h2 class="section-title">Dashboard Grafana</h2>
-      <p class="section-subtitle">
-        Visualizzazione avanzata dei dati ambientali tramite Grafana Public Dashboard.
-      </p>
-    </div>
-    <div class="section-actions">
-      <a
-        href="https://vineguardssh.grafana.net/public-dashboards/c6686e371a894ba68fcfb0c9e465c964"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="btn btn-secondary"
-      >
-        Apri in Grafana
-      </a>
-    </div>
-  </header>
-<!-- Card Rischio ML -->
-<article class="card card-risk">
-  <header class="card-header">
-    <span class="card-label">Rischio malattia (ML)</span>
-  </header>
-  <div class="card-body">
-    <div class="risk-value">
-      {{ rischio_percento }}%
-    </div>
 
-    <div class="risk-bar">
-      <div
-        class="risk-bar-fill
-          {% if rischio_percento < 30 %}
-            risk-low
-          {% elif rischio_percento < 70 %}
-            risk-medium
-          {% else %}
-            risk-high
-          {% endif %}"
-        style="width: {{ rischio_percento }}%;"
-      ></div>
-    </div>
-
-    <p class="risk-text">
-      {% if rischio_percento < 30 %}
-        Rischio basso, condizioni attualmente favorevoli.
-      {% elif rischio_percento < 70 %}
-        Rischio medio, tieni monitorate le condizioni.
-      {% else %}
-        Rischio alto, valutare controlli e interventi nel vigneto.
-      {% endif %}
-    </p>
-  </div>
-</article>
-  <div class="grafana-wrapper">
-    <iframe
-      src="https://vineguardssh.grafana.net/public-dashboards/c6686e371a894ba68fcfb0c9e465c964"
-      loading="lazy"
-      referrerpolicy="no-referrer"
-      frameborder="0"
-      class="grafana-iframe"
-    ></iframe>
-  </div>
-</section>
-  <script src="{% static 'dashboard/app.js' %}"></script>
+  <script src="{% static 'dashboard/app.js' %}?v=12"></script>
 </body>
 </html>

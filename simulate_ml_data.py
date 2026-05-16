@@ -57,6 +57,34 @@ def main():
             "soil": (65.0, 82.0),
             "rain": (0.0, 2.5),
         },
+        "node5": {
+            "label": 0,
+            "temp": (15.0, 19.0),
+            "umid": (50.0, 65.0),
+            "soil": (28.0, 42.0),
+            "rain": (0.0, 3.5),
+        },
+        "node6": {
+            "label": 1,
+            "temp": (28.0, 32.0),
+            "umid": (82.0, 96.0),
+            "soil": (58.0, 78.0),
+            "rain": (0.0, 3.0),
+        },
+        "node7": {
+            "label": 0,
+            "temp": (17.0, 22.0),
+            "umid": (52.0, 68.0),
+            "soil": (33.0, 50.0),
+            "rain": (0.0, 4.5),
+        },
+        "node8": {
+            "label": 1,
+            "temp": (25.0, 30.0),
+            "umid": (87.0, 94.0),
+            "soil": (64.0, 80.0),
+            "rain": (0.0, 2.8),
+        },
     }
 
     client = InfluxDBClient(
@@ -66,17 +94,25 @@ def main():
     )
     write_api = client.write_api(write_options=SYNCHRONOUS)
 
-    start = datetime.now(timezone.utc) - timedelta(days=5)
-    for day in range(6):
-        ts = start + timedelta(days=day)
-        for node_id, defs in nodes.items():
-            temp = uniform(*defs["temp"])
-            umid = uniform(*defs["umid"])
-            soil = uniform(*defs["soil"])
-            rain = uniform(*defs["rain"])
-            point = generate_point(node_id, ts, temp, umid, soil, rain)
-            write_api.write(bucket=settings.INFLUX_BUCKET, record=point)
-    print("Dati sensore inviati per", len(nodes), "nodi su 6 giorni.")
+    num_days = 7
+    points_per_day = 4
+    start = datetime.now(timezone.utc) - timedelta(days=num_days)
+    times = [timedelta(hours=6), timedelta(hours=12), timedelta(hours=18), timedelta(hours=23)]
+
+    total_points = 0
+    for day in range(num_days):
+        for point_idx in range(points_per_day):
+            ts = start + timedelta(days=day) + times[point_idx]
+            for node_id, defs in nodes.items():
+                temp = uniform(*defs["temp"])
+                umid = uniform(*defs["umid"])
+                soil = uniform(*defs["soil"])
+                rain = uniform(*defs["rain"])
+                point = generate_point(node_id, ts, temp, umid, soil, rain)
+                write_api.write(bucket=settings.INFLUX_BUCKET, record=point)
+                total_points += 1
+
+    print("Dati sensore inviati:", total_points, "punti per", len(nodes), "nodi su", num_days, "giorni.")
 
     label_time = datetime.now(timezone.utc) - timedelta(days=1)
     for node_id, defs in nodes.items():
