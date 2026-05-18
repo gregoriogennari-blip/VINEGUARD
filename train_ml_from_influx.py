@@ -1,14 +1,13 @@
-"""train_ml_from_influx.py
+"""
+train_ml_from_influx.py
 
-Script di esempio per:
-- leggere dati storici da InfluxDB
+Script per:
+- leggere dati storici da InfluxDB (measurement: sensor_data)
 - creare un dataset tabellare
 - definire una colonna di rischio sintetica
 - allenare un modello RandomForest
 - salvare il modello in model_rischio.pkl
 
-Usa le stesse variabili di ambiente del progetto Django:
-- INFLUX_HOST, INFLUX_TOKEN, INFLUX_ORG, INFLUX_BUCKET
 """
 
 import os
@@ -36,11 +35,14 @@ def fetch_data_from_influx(days: int = 30) -> pd.DataFrame:
 
     start = (datetime.utcnow() - timedelta(days=days)).isoformat() + "Z"
 
+    # ATTENZIONE: measurement e nomi campi allineati al resto del progetto:
+    # measurement: "sensor_data"
+    # campi: temp_aria, umid_aria, umid_suolo, rain_mm
     query = f"""
 from(bucket: "{bucket}")
   |> range(start: {start})
-  |> filter(fn: (r) => r["_measurement"] == "sensordata")
-  |> filter(fn: (r) => r["_field"] =~ /temparia|umidaria|umidsuolo|rainmm/)
+  |> filter(fn: (r) => r["_measurement"] == "sensor_data")
+  |> filter(fn: (r) => r["_field"] =~ /temp_aria|umid_aria|umid_suolo|rain_mm/)
 """
 
     tables = query_api.query_data_frame(query)
@@ -52,6 +54,7 @@ from(bucket: "{bucket}")
     if df.empty:
         raise RuntimeError("Nessun dato trovato in InfluxDB per il periodo richiesto")
 
+    # pivot: ogni riga = timestamp, colonne = campi sensore con underscore
     df = df[["_time", "_field", "_value"]]
     df = df.pivot(index="_time", columns="_field", values="_value").reset_index()
     df = df.sort_values("_time")
@@ -59,14 +62,24 @@ from(bucket: "{bucket}")
 
 
 def add_synthetic_target(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Crea una colonna binaria di rischio sintetico:
+    - 1 se (temp_aria > 25) e (umid_aria > 80), altrimenti 0.
+    Serve solo come esempio rapido, non è il modello reale usato dalla dashboard.
+    """
     df = df.copy()
-    cond = (df.get("temparia", 0) > 25) & (df.get("umidaria", 0) > 80)
+    # Uso .get per resistere anche se qualche colonna manca
+    cond = (df.get("temp_aria", 0) > 25) & (df.get("umid_aria", 0) > 80)
     df["rischio_target"] = np.where(cond, 1, 0)
     return df
 
 
 def train_model(df: pd.DataFrame):
-    feature_cols = [c for c in df.columns if c in ["temparia", "umidaria", "umidsuolo", "rainmm"]]
+    feature_cols = [
+        c
+        for c in df.columns
+        if c in ["temp_aria", "umid_aria", "umid_suolo", "rain_mm"]
+    ]
     target_col = "rischio_target"
 
     df = df.dropna(subset=feature_cols + [target_col])
@@ -76,9 +89,15 @@ def train_model(df: pd.DataFrame):
     if len(df) < 50:
         print("Warning: pochissimi campioni, il modello sarà debole")
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
 
-    clf = RandomForestClassifier(n_estimators=200, random_state=42, class_weight="balanced")
+    clf = RandomForestClassifier(
+        n_estimators=200,
+        random_state=42,
+        class_weight="balanced",
+    )
     clf.fit(X_train, y_train)
 
     score = clf.score(X_test, y_test)
