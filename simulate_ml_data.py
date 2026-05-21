@@ -3,6 +3,7 @@
 import os
 from datetime import datetime, timedelta, timezone
 from random import uniform
+from zoneinfo import ZoneInfo
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "vineguard.settings")
 
@@ -96,32 +97,48 @@ def main():
 
     num_days = 7
     points_per_day = 4
-    start = datetime.now(timezone.utc) - timedelta(days=num_days)
+    rome_tz = ZoneInfo("Europe/Rome")
+    start = datetime.now(rome_tz) - timedelta(days=num_days)
     times = [timedelta(hours=6), timedelta(hours=12), timedelta(hours=18), timedelta(hours=23)]
 
     total_points = 0
     for day in range(num_days):
         for point_idx in range(points_per_day):
             ts = start + timedelta(days=day) + times[point_idx]
+            ts_utc = ts.astimezone(timezone.utc)
             for node_id, defs in nodes.items():
                 temp = uniform(*defs["temp"])
                 umid = uniform(*defs["umid"])
                 soil = uniform(*defs["soil"])
                 rain = uniform(*defs["rain"])
-                point = generate_point(node_id, ts, temp, umid, soil, rain)
+                point = generate_point(node_id, ts_utc, temp, umid, soil, rain)
                 write_api.write(bucket=settings.INFLUX_BUCKET, record=point)
                 total_points += 1
 
+    # Aggiungo un punto dati all'ora corrente in modo che l'etichetta "ultimo aggiornamento"
+    # rifletta l'orario reale e non rimanga fermo all'ultimo slot fisso del giorno precedente.
+    current_local = datetime.now(rome_tz)
+    current_utc = current_local.astimezone(timezone.utc)
+    for node_id, defs in nodes.items():
+        temp = uniform(*defs["temp"])
+        umid = uniform(*defs["umid"])
+        soil = uniform(*defs["soil"])
+        rain = uniform(*defs["rain"])
+        current_point = generate_point(node_id, current_utc, temp, umid, soil, rain)
+        write_api.write(bucket=settings.INFLUX_BUCKET, record=current_point)
+        total_points += 1
+
     print("Dati sensore inviati:", total_points, "punti per", len(nodes), "nodi su", num_days, "giorni.")
 
-    label_time = datetime.now(timezone.utc) - timedelta(days=1)
+    label_time = datetime.now(rome_tz) - timedelta(days=1)
+    label_time_utc = label_time.astimezone(timezone.utc)
     for node_id, defs in nodes.items():
         label_point = (
             Point("ml_labels")
             .tag("node_id", node_id)
             .field("label", defs["label"])
             .field("window_days", 7)
-            .time(label_time)
+            .time(label_time_utc)
         )
         write_api.write(bucket=settings.INFLUX_BUCKET, record=label_point)
     print("Etichette ML inviate (label 0/1).")

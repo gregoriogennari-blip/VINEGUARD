@@ -267,6 +267,9 @@ from(bucket: "{settings.INFLUX_BUCKET}")
             time = record.get_time()
             if not time:
                 continue
+            if time.tzinfo is None:
+                time = time.replace(tzinfo=dt_timezone.utc)
+            time = timezone.localtime(time)
             time_str = time.strftime("%Y-%m-%d %H:%M")
 
             if time_str not in by_time:
