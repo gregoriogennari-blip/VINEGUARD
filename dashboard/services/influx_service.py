@@ -1,7 +1,9 @@
 from dataclasses import dataclass
+from datetime import datetime, timezone as dt_timezone
 from typing import List, Dict
 
 from django.conf import settings
+from django.utils import timezone
 
 from influxdb_client import InfluxDBClient
 
@@ -68,7 +70,16 @@ def risk_level(risk: float) -> dict:
 def format_timestamp(value: str | None) -> str:
     if not value:
         return "N/D"
-    return value.replace("T", " ").split(".")[0]
+
+    try:
+        iso = value.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=dt_timezone.utc)
+        local_dt = timezone.localtime(dt)
+        return local_dt.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return value.replace("T", " ").split(".")[0]
 
 
 def _build_client() -> InfluxDBClient:
