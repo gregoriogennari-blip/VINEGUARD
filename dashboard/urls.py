@@ -3,7 +3,7 @@ from .views import (
     dashboard_home, latest_data_json, receive_sensors,
     emergency_alert, telegram_webhook,
     ml_risk_json, ml_label_json, ml_labels_list, ml_train_json,
-    historical_data_json,
+    historical_data_json, export_csv,
 )
 
 urlpatterns = [
@@ -17,4 +17,5 @@ urlpatterns = [
     path("api/ml-label/",       ml_label_json,    name="ml_label_json"),
     path("api/ml-labels/",      ml_labels_list,   name="ml_labels_list"),
     path("api/ml-train/",       ml_train_json,    name="ml_train_json"),
+    path("export/csv/",        export_csv,       name="export_csv"),
 ]

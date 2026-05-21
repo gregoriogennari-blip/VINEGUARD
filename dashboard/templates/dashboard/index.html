@@ -8,17 +8,19 @@
 </head>
 <body>
   <header class="page-header">
-    <div>
+    <div class="header-title">
       <h1>VINEGUARD SSH</h1>
-      <p class="page-kicker">Dashboard monitoraggio vigneto</p>
     </div>
-    <button
-      id="emergency-btn"
-      class="btn btn-danger"
-      data-selected-node="{{ selected_node|default:'' }}"
-    >
-      Invia avviso
-    </button>
+    <div class="header-actions">
+      <a href="{% url 'export_csv' %}{% if selected_node %}?node_id={{ selected_node }}{% endif %}" class="btn btn-secondary">Esporta CSV</a>
+      <button
+        id="emergency-btn"
+        class="btn btn-danger"
+        data-selected-node="{{ selected_node|default:'' }}"
+      >
+        Invia avviso
+      </button>
+    </div>
   </header>
 
   <section class="cards">

@@ -1,9 +1,10 @@
+import csv
 import json
 from datetime import datetime
 
 import requests
 from django.conf import settings
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
@@ -208,6 +209,40 @@ def historical_data_json(request):
     days = max(1, min(days, 30))
 
     return JsonResponse({"history": get_historical_data(node_id=node_id, days=days)})
+
+
+def export_csv(request):
+    node_id = request.GET.get("node_id")
+    days = 7
+
+    response = HttpResponse(content_type="text/csv")
+    filename = f"vineguard_{node_id}_{days}d.csv" if node_id else f"vineguard_last_{days}d.csv"
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+    writer = csv.writer(response)
+    writer.writerow([
+        "Nodo",
+        "Timestamp",
+        "Temp aria (C)",
+        "Umid aria (%)",
+        "Umid suolo (%)",
+        "Pioggia (mm)",
+    ])
+
+    node_ids = [node_id] if node_id else get_node_ids(days=days)
+    for current_node in node_ids:
+        history = get_historical_data(current_node, days=days)
+        for index, timestamp in enumerate(history.get("time_labels", [])):
+            writer.writerow([
+                current_node,
+                timestamp,
+                history.get("temperatures", [])[index] if index < len(history.get("temperatures", [])) else "",
+                history.get("humidity_air", [])[index] if index < len(history.get("humidity_air", [])) else "",
+                history.get("humidity_soil", [])[index] if index < len(history.get("humidity_soil", [])) else "",
+                history.get("rainfall", [])[index] if index < len(history.get("rainfall", [])) else "",
+            ])
+
+    return response
 
 
 @csrf_exempt
